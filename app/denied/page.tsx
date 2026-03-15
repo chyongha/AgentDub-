@@ -10,8 +10,9 @@ function DeniedContent() {
   const reason  = params.get("reason");
   const email   = params.get("email");
 
-  const isNoEmail       = reason === "no_email";
+  const isNoEmail        = reason === "no_email";
   const isNotWhitelisted = reason === "not_whitelisted";
+  const isDbError        = reason === "db_error";
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
@@ -35,6 +36,29 @@ function DeniedContent() {
         <h1 className="font-display text-4xl mb-4" style={{ color: "var(--color-text)" }}>
           ACCESS <span style={{ color: "#ff5050" }}>DENIED</span>
         </h1>
+
+        {/* ── DB / config error ── */}
+        {isDbError && (
+          <>
+            <p className="text-sm leading-relaxed mb-4" style={{ color: "var(--color-ash)" }}>
+              A server configuration error occurred while checking your access.
+            </p>
+            <div
+              className="rounded-lg px-4 py-3 mb-8 text-left text-xs space-y-2"
+              style={{ background: "rgba(17,17,24,0.8)", border: "1px solid var(--color-border)" }}
+            >
+              <p className="font-mono tracking-widest uppercase text-[10px]" style={{ color: "var(--color-volt)" }}>
+                For the administrator
+              </p>
+              <p style={{ color: "var(--color-ash)" }}>
+                Check that <span style={{ color: "var(--color-text)" }}>TURSO_DATABASE_URL</span> and{" "}
+                <span style={{ color: "var(--color-text)" }}>TURSO_AUTH_TOKEN</span> are set correctly
+                in your Vercel environment variables and that the database has been initialised
+                via <span style={{ color: "var(--color-text)" }}>/api/init-db</span>.
+              </p>
+            </div>
+          </>
+        )}
 
         {/* ── Not whitelisted ── */}
         {isNotWhitelisted && (
@@ -100,7 +124,7 @@ function DeniedContent() {
         )}
 
         {/* ── Generic fallback ── */}
-        {!isNoEmail && !isNotWhitelisted && (
+        {!isNoEmail && !isNotWhitelisted && !isDbError && (
           <p className="text-sm leading-relaxed mb-8" style={{ color: "var(--color-ash)" }}>
             You are not authorised to access this application.
             Please try a different account or contact the administrator.

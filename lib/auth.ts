@@ -12,23 +12,24 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
+  secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
-    /**
-     * Runs before a session is created.
-     * Returns true  → login proceeds
-     * Returns false → login blocked (redirects to /denied)
-     * Returns a URL → redirect to that URL
-     */
     async signIn({ user }) {
-      if (!user.email) return "/denied?reason=no_email";
+      try {
+        if (!user.email) return `/denied?reason=no_email`;
 
-      const allowed = await isEmailWhitelisted(user.email);
-      if (!allowed) {
-        const encoded = encodeURIComponent(user.email);
-        return `/denied?reason=not_whitelisted&email=${encoded}`;
+        const allowed = await isEmailWhitelisted(user.email);
+        if (!allowed) {
+          const encoded = encodeURIComponent(user.email);
+          return `/denied?reason=not_whitelisted&email=${encoded}`;
+        }
+
+        return true;
+      } catch (err) {
+        // DB error — log it and block sign-in rather than silently failing
+        console.error("[auth] signIn callback error:", err);
+        return `/denied?reason=db_error`;
       }
-
-      return true;
     },
 
     async session({ session, token }) {
