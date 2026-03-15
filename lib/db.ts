@@ -1,28 +1,43 @@
 import { createClient } from "@libsql/client";
 
 // ── Connection ────────────────────────────────────────────────────────────────
+// Lazy singleton — only created on first use, not at build time.
+// This prevents Vercel build failures when env vars are not available
+// during the build phase (they are only available at runtime).
 
-if (!process.env.TURSO_DATABASE_URL) {
-  throw new Error("Missing env variable: TURSO_DATABASE_URL");
-}
-if (!process.env.TURSO_AUTH_TOKEN) {
-  throw new Error("Missing env variable: TURSO_AUTH_TOKEN");
+let _db: ReturnType<typeof createClient> | null = null;
+
+function getDb(): ReturnType<typeof createClient> {
+  if (_db) return _db;
+
+  if (!process.env.TURSO_DATABASE_URL) {
+    throw new Error("Missing env variable: TURSO_DATABASE_URL");
+  }
+  if (!process.env.TURSO_AUTH_TOKEN) {
+    throw new Error("Missing env variable: TURSO_AUTH_TOKEN");
+  }
+
+  _db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  });
+
+  return _db;
 }
 
-export const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
+// Proxy so callers can still write `db.execute(...)` unchanged
+export const db = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_, prop) {
+    return getDb()[prop as keyof ReturnType<typeof createClient>];
+  },
 });
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
-/**
- * Creates all tables and seeds default data.
- * Safe to run multiple times — uses IF NOT EXISTS + INSERT OR IGNORE.
- */
 export async function initDb() {
-  // 1. Whitelist table — controls who can sign in
-  await db.execute(`
+  const client = getDb();
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS whitelist (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       email      TEXT UNIQUE NOT NULL COLLATE NOCASE,
@@ -30,8 +45,7 @@ export async function initDb() {
     )
   `);
 
-  // 2. Users table — populated on first sign-in if email is whitelisted
-  await db.execute(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id         TEXT PRIMARY KEY,
       email      TEXT UNIQUE NOT NULL COLLATE NOCASE,
@@ -41,8 +55,7 @@ export async function initDb() {
     )
   `);
 
-  // 3. Projects table
-  await db.execute(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS projects (
       id          TEXT PRIMARY KEY,
       user_id     TEXT NOT NULL REFERENCES users(id),
@@ -55,38 +68,24 @@ export async function initDb() {
     )
   `);
 
-  // 4. Seed default whitelisted email
-  const defaultEmails = [
-    "kts1232estsoft.com",
-    "legocho2162@gmail.com"
-  ];
-
-  for (const email of defaultEmails){
-    await db.execute({
-      sql: 'INSERT OR IGNORE INTO whitelist (email) VALUES (?)',
-      args: [email],
-    });
-  }
+  await client.execute({
+    sql: `INSERT OR IGNORE INTO whitelist (email) VALUES (?)`,
+    args: ["kts123@estsoft.com"],
+  });
 }
 
 // ── Whitelist helpers ─────────────────────────────────────────────────────────
 
-/**
- * Returns true if the given email is in the whitelist.
- */
 export async function isEmailWhitelisted(email: string): Promise<boolean> {
-  const result = await db.execute({
+  const result = await getDb().execute({
     sql: `SELECT 1 FROM whitelist WHERE email = ? LIMIT 1`,
     args: [email],
   });
   return result.rows.length > 0;
 }
 
-/**
- * Adds an email to the whitelist. No-op if it already exists.
- */
 export async function addToWhitelist(email: string): Promise<void> {
-  await db.execute({
+  await getDb().execute({
     sql: `INSERT OR IGNORE INTO whitelist (email) VALUES (?)`,
     args: [email],
   });
